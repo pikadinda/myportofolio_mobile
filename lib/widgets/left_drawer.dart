@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:myportofolio_mobile/screens/menu.dart';
 import 'package:myportofolio_mobile/screens/project_form.dart';
+import 'package:myportofolio_mobile/screens/experience_form.dart';
 
 class LeftDrawer extends StatelessWidget {
   const LeftDrawer({super.key});
@@ -32,6 +33,7 @@ class LeftDrawer extends StatelessWidget {
             ),
           ),
 
+          // Menu Home
           ListTile(
             leading: const Icon(Icons.home_outlined),
             title: const Text('Home'),
@@ -43,6 +45,7 @@ class LeftDrawer extends StatelessWidget {
             },
           ),
 
+          // Menu Add Project
           ListTile(
             leading: const Icon(Icons.add_circle_outline),
             title: const Text('Add Project'),
@@ -51,6 +54,20 @@ class LeftDrawer extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                   builder: (context) => const ProjectFormPage(),
+                ),
+              );
+            },
+          ),
+
+          // Menu Experience Form
+          ListTile(
+            leading: const Icon(Icons.work_history_outlined),
+            title: const Text('Add Experience'),
+            onTap: () {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ExperienceFormPage(),
                 ),
               );
             },
