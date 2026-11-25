@@ -1,0 +1,142 @@
+import 'package:material_ui/material_ui.dart';
+import 'package:myportofolio_mobile/models/experience.dart';
+import 'package:myportofolio_mobile/screens/experience_detail_screen.dart';
+import 'package:myportofolio_mobile/services/api_client.dart';
+import 'package:myportofolio_mobile/widgets/left_drawer.dart';
+import 'package:provider/provider.dart';
+
+class ExperienceListScreen extends StatefulWidget {
+  const ExperienceListScreen({super.key});
+
+  @override
+  State<ExperienceListScreen> createState() => _ExperienceListScreenState();
+}
+
+class _ExperienceListScreenState extends State<ExperienceListScreen> {
+  late Future<List<Experience>> _experiencesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _experiencesFuture = context.read<ApiClient>().getExperiences();
+  }
+
+  Future<void> _reload() async {
+    final future = context.read<ApiClient>().getExperiences();
+
+    setState(() {
+      _experiencesFuture = future;
+    });
+
+    await future;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('My Experiences')),
+      drawer: const LeftDrawer(),
+      body: FutureBuilder<List<Experience>>(
+        future: _experiencesFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Failed to load experiences: ${snapshot.error}',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: _reload,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final experiences = snapshot.data ?? const <Experience>[];
+
+          if (experiences.isEmpty) {
+            return RefreshIndicator(
+              onRefresh: _reload,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(
+                    height: 400,
+                    child: Center(child: Text('No experiences found.')),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return RefreshIndicator(
+            onRefresh: _reload,
+            child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: experiences.length,
+              itemBuilder: (context, index) {
+                final experience = experiences[index];
+
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  child: ListTile(
+                    title: Text(
+                      experience.title,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            experience.categoryDisplay.isNotEmpty
+                                ? experience.categoryDisplay
+                                : experience.category,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            experience.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              ExperienceDetailScreen(experience: experience),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}

@@ -15,7 +15,7 @@ class MyHomePage extends StatelessWidget {
   const MyHomePage({super.key});
 
   final List<ItemHomepage> items = const [
-    ItemHomepage("Lihat Proyek", Icons.folder),
+    ItemHomepage("Lihat Experience", Icons.work_history),
     ItemHomepage("Tambah Proyek", Icons.add_circle),
     ItemHomepage("Tambah Experience", Icons.work_history),
     ItemHomepage("Logout", Icons.logout),

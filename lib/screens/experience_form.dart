@@ -1,5 +1,10 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:myportofolio_mobile/models/experience.dart';
+import 'package:myportofolio_mobile/services/api_client.dart';
+import 'package:myportofolio_mobile/services/auth_state.dart';
+import 'package:myportofolio_mobile/widgets/auth_guard.dart';
 import 'package:myportofolio_mobile/widgets/left_drawer.dart';
+import 'package:provider/provider.dart';
 
 class ExperienceFormPage extends StatefulWidget {
   const ExperienceFormPage({super.key});
@@ -11,14 +16,14 @@ class ExperienceFormPage extends StatefulWidget {
 class _ExperienceFormPageState extends State<ExperienceFormPage> {
   final _formKey = GlobalKey<FormState>();
 
-  // Data formulir sesuai model Experience Django.
   String _title = '';
   String _description = '';
   String _category = 'full-time';
   String _thumbnail = '';
   DateTime? _endedAt;
 
-  // Kategori mengikuti EXPERIENCE_CHOICES pada Django.
+  bool _isSubmitting = false;
+
   static const Map<String, String> _experienceChoices = {
     'internship': 'Internship',
     'research': 'Research',
@@ -34,7 +39,6 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
     return '$day/$month/${date.year}';
   }
 
-  // Memilih tanggal selesai pengalaman.
   Future<void> _selectEndDate() async {
     final now = DateTime.now();
 
@@ -45,20 +49,15 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
       lastDate: DateTime(now.year + 50),
     );
 
-    if (selectedDate != null) {
+    if (selectedDate != null && mounted) {
       setState(() {
         _endedAt = selectedDate;
       });
     }
   }
 
-  // Menampilkan ringkasan setelah seluruh validasi berhasil.
-  void _showSummary() {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    showDialog<void>(
+  Future<void> _showSummary(Experience experience) async {
+    await showDialog<void>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
@@ -68,18 +67,22 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Title: $_title'),
+                Text('ID: ${experience.id ?? "-"}'),
                 const SizedBox(height: 8),
-                Text('Description: $_description'),
+                Text('Title: ${experience.title}'),
                 const SizedBox(height: 8),
-                Text('Category: ${_experienceChoices[_category]}'),
+                Text('Description: ${experience.description}'),
                 const SizedBox(height: 8),
                 Text(
-                  'Thumbnail: ${_thumbnail.isEmpty ? "Tidak diisi" : _thumbnail}',
+                  'Category: ${experience.categoryDisplay.isNotEmpty ? experience.categoryDisplay : _experienceChoices[experience.category]}',
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'End Date: ${_endedAt == null ? "Masih berlangsung" : _formatDate(_endedAt!)}',
+                  'Thumbnail: ${experience.thumbnail.isEmpty ? "Tidak diisi" : experience.thumbnail}',
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'End Date: ${experience.isOngoing || experience.endedAt == null ? "Masih berlangsung" : _formatDate(experience.endedAt!)}',
                 ),
               ],
             ),
@@ -97,6 +100,102 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
     );
   }
 
+  Future<void> _submit() async {
+    // Validate all form inputs first.
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    // Require authentication before submitting.
+    final allowed = await ensureLoggedIn(context);
+
+    if (!allowed || !mounted) {
+      return;
+    }
+
+    final authState = context.read<AuthState>();
+    final token = authState.token;
+
+    if (token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in before adding an experience.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      // Create a new Experience object from form inputs.
+      final newExperience = Experience(
+        title: _title.trim(),
+        description: _description.trim(),
+        category: _category,
+        thumbnail: _thumbnail.trim(),
+        endedAt: _endedAt,
+      );
+
+      // Send the POST request to Django using token authentication.
+      final createdExperience = await context
+          .read<ApiClient>()
+          .createExperience(newExperience, token: token);
+
+      if (!mounted) return;
+
+      // Show confirmation only after the server successfully creates it.
+      await _showSummary(createdExperience);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+
+      if (error.statusCode == 401) {
+        // Clear the expired local session and request login again.
+        try {
+          await context.read<AuthState>().logout();
+        } catch (_) {
+          // AuthState clears the local token in its finally block.
+        }
+
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Your session has expired. Please log in again, then retry.',
+            ),
+          ),
+        );
+
+        await ensureLoggedIn(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to save experience (HTTP ${error.statusCode}).',
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('An error occurred while connecting to the server.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -108,15 +207,12 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
       ),
-
-      // Menggunakan Drawer yang sama dengan halaman lainnya.
       drawer: const LeftDrawer(),
-
       body: SafeArea(
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -128,7 +224,7 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
                 const Text('Fill in the details of your experience.'),
                 const SizedBox(height: 16),
 
-                // === Experience Title ===
+                // Experience Title
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: TextFormField(
@@ -157,7 +253,7 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
                   ),
                 ),
 
-                // === Description ===
+                // Description
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: TextFormField(
@@ -183,7 +279,7 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
                   ),
                 ),
 
-                // === Category ===
+                // Category
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: DropdownButtonFormField<String>(
@@ -217,7 +313,7 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
                   ),
                 ),
 
-                // === Thumbnail URL (Optional) ===
+                // Thumbnail URL (Optional)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: TextFormField(
@@ -237,7 +333,6 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
                     validator: (value) {
                       final url = value?.trim() ?? '';
 
-                      // Thumbnail bersifat opsional.
                       if (url.isEmpty) {
                         return null;
                       }
@@ -261,7 +356,7 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
                   ),
                 ),
 
-                // === End Date (Optional) ===
+                // End Date (Optional)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 20),
                   child: Column(
@@ -276,7 +371,7 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: _selectEndDate,
+                              onPressed: _isSubmitting ? null : _selectEndDate,
                               icon: const Icon(Icons.calendar_month),
                               label: Text(
                                 _endedAt == null
@@ -288,11 +383,13 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
                           if (_endedAt != null)
                             IconButton(
                               tooltip: 'Clear date',
-                              onPressed: () {
-                                setState(() {
-                                  _endedAt = null;
-                                });
-                              },
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _endedAt = null;
+                                      });
+                                    },
                               icon: const Icon(Icons.close),
                             ),
                         ],
@@ -309,7 +406,7 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
                   ),
                 ),
 
-                // === Save Button ===
+                // Save Button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -318,11 +415,20 @@ class _ExperienceFormPageState extends State<ExperienceFormPage> {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    onPressed: _showSummary,
-                    child: const Text(
-                      'Save Experience',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                    onPressed: _isSubmitting ? null : _submit,
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Save Experience',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                   ),
                 ),
               ],
